@@ -14,7 +14,14 @@
   "license": "MIT",
   "type": "module",
   "exports": {
-    "./*.js": "./*.js"
+    "./*.js": "./*.js",
+    "./epubcfi.js": "./epubcfi.js",
+    "./epub.js": "./epub.js",
+    "./fb2.js": "./fb2.js",
+    "./mobi.js": "./mobi.js",
+    "./pdf.js": "./pdf.js",
+    "./comic-book.js": "./comic-book.js",
+    "./vendor/fflate.js": "./vendor/fflate.js"
   },
   "devDependencies": {
     "@eslint/js": "^9.9.1",
