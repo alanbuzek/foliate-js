@@ -11986,33 +11986,9 @@ class LoopbackPort {
 }
 class PDFWorker {
   static #fakeWorkerId = 0;
-  static #isWorkerDisabled = false;
+  static #isWorkerDisabled = isNodeJS ? true : false;
   static #workerPorts;
-  static {
-    if (isNodeJS) {
-      this.#isWorkerDisabled = true;
-      GlobalWorkerOptions.workerSrc ||= "./pdf.worker.mjs";
-    }
-    this._isSameOrigin = (baseUrl, otherUrl) => {
-      let base;
-      try {
-        base = new URL(baseUrl);
-        if (!base.origin || base.origin === "null") {
-          return false;
-        }
-      } catch {
-        return false;
-      }
-      const other = new URL(otherUrl, base);
-      return base.origin === other.origin;
-    };
-    this._createCDNWrapper = url => {
-      const wrapper = `await import("${url}");`;
-      return URL.createObjectURL(new Blob([wrapper], {
-        type: "text/javascript"
-      }));
-    };
-  }
+  
   constructor({
     name = null,
     port = null,
@@ -12068,8 +12044,28 @@ class PDFWorker {
       workerSrc
     } = PDFWorker;
     try {
-      if (!PDFWorker._isSameOrigin(window.location.href, workerSrc)) {
-        workerSrc = PDFWorker._createCDNWrapper(new URL(workerSrc, window.location).href);
+      const _isSameOrigin = (baseUrl, otherUrl) => {
+        let base;
+        try {
+          base = new URL(baseUrl);
+          if (!base.origin || base.origin === "null") {
+            return false;
+          }
+        } catch {
+          return false;
+        }
+        const other = new URL(otherUrl, base);
+        return base.origin === other.origin;
+      };
+      if (!_isSameOrigin(window.location.href, workerSrc)) {
+        const _createCDNWrapper = url => {
+          const wrapper = `await import("${url}");`;
+          return URL.createObjectURL(new Blob([wrapper], {
+            type: "text/javascript"
+          }));
+        };
+
+        workerSrc = _createCDNWrapper(new URL(workerSrc, window.location).href);
       }
       const worker = new Worker(workerSrc, {
         type: "module"
@@ -12175,6 +12171,9 @@ class PDFWorker {
     return new PDFWorker(params);
   }
   static get workerSrc() {
+    if (isNodeJS){
+      GlobalWorkerOptions.workerSrc = "./pdf.worker.mjs";
+    }
     if (GlobalWorkerOptions.workerSrc) {
       return GlobalWorkerOptions.workerSrc;
     }
