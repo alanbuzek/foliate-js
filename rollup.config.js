@@ -1,6 +1,7 @@
 import { nodeResolve } from '@rollup/plugin-node-resolve'
 import terser from '@rollup/plugin-terser'
 import { copy } from 'fs-extra'
+import babel from '@rollup/plugin-babel'
 
 const copyPDFJS = () => ({
     name: 'copy-pdfjs',
@@ -28,5 +29,20 @@ export default [{
         dir: 'vendor/',
         format: 'esm',
     },
-    plugins: [nodeResolve(), terser(), copyPDFJS()],
+    plugins: [
+        nodeResolve(),
+        babel({
+            babelHelpers: 'bundled',
+            presets: [
+                ['@babel/preset-env', {
+                    targets: {
+                        browsers: '> 0.25%, not dead'
+                    }
+                }]
+            ],
+            include: ['vendor/pdfjs/**/*.mjs']
+        }),
+        terser(),
+        copyPDFJS()
+    ],
 }]
