@@ -28,6 +28,49 @@ const animate = (a, b, duration, ease, render) => new Promise(resolve => {
     requestAnimationFrame(step)
 })
 
+// TODO: figure out how to pass the variable down into the foliate-js package
+const MASTERLINGO_ENV = 'DEV'
+
+const MASTERLINGO_EXTENSION_ID = {
+    DEV: 'amlbpnchejmokgflmddoefbojdommgci',
+    PROD: 'fbfmjjebfpcefapmipcbckbdpfnjhfmj',
+}
+
+
+export const syncWithExtension = ({
+    type,
+    payload = null,
+}) => {
+    console.log('sync with syncWithExtension')
+    return new Promise(resolve => {
+        if (
+            typeof chrome !== 'undefined' &&
+            chrome &&
+            chrome.runtime &&
+            chrome.runtime.sendMessage
+        ) {
+            console.log('chrome.runtime.sendMessage')
+            chrome.runtime.sendMessage(
+                MASTERLINGO_EXTENSION_ID[MASTERLINGO_ENV],
+                {
+                    type,
+                    payload,
+                },
+                () => {
+                    const { lastError } = chrome.runtime
+                    if (lastError) {
+                        console.info('Connecting to extension error: ', lastError.message)
+                        // 'Could not establish connection. Receiving end does not exist.'
+                    }
+                    resolve({ error: lastError, activated: !lastError })
+                },
+            )
+        } else {
+            resolve({ activated: false })
+        }
+    })
+}
+
 // collapsed range doesn't return client rects sometimes (or always?)
 // try make get a non-collapsed range or element
 const uncollapse = range => {
@@ -231,7 +274,7 @@ class View {
         })
         // `allow-scripts` is needed for events because of WebKit bug
         // https://bugs.webkit.org/show_bug.cgi?id=218086
-        this.#iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts')
+        this.#iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-popups')
         this.#iframe.setAttribute('scrolling', 'no')
     }
     get element() {
@@ -240,7 +283,7 @@ class View {
     get document() {
         return this.#iframe.contentDocument
     }
-    async load(src, data, afterLoad, beforeRender) {
+    async load(src, afterLoad, beforeRender) {
         if (typeof src !== 'string') throw new Error(`${src} is not string`)
         return new Promise(resolve => {
             this.#iframe.addEventListener('load', () => {
@@ -271,11 +314,7 @@ class View {
 
                 resolve()
             }, { once: true })
-            if (data) {
-                this.#iframe.srcdoc = data
-            } else {
-                this.#iframe.src = src
-            }
+            this.#iframe.src = src
         })
     }
     render(layout) {
@@ -601,8 +640,7 @@ export class Paginator extends HTMLElement {
                 if (!range) return
                 const sel = doc.getSelection()
                 if (!sel.rangeCount) return
-                // FIXME: this won't work on Android WebView, disable for now
-                if (!isPointerSelecting && isPointerSelecting && sel.type === 'Range')
+                if (isPointerSelecting && sel.type === 'Range')
                     checkPointerSelection(range, sel)
                 else if (isKeyboardSelecting) {
                     const selRange = sel.getRangeAt(0).cloneRange()
@@ -611,13 +649,9 @@ export class Paginator extends HTMLElement {
                     this.#scrollToAnchor(selRange)
                 }
             })
-            doc.addEventListener('focusin', e => {
-                if (this.scrolled) return null
-                if (this.#container && this.#container.contains(e.target)) {
-                    // NOTE: `requestAnimationFrame` is needed in WebKit
-                    requestAnimationFrame(() => this.#scrollToAnchor(e.target))
-                }
-            })
+            doc.addEventListener('focusin', e => this.scrolled ? null :
+                // NOTE: `requestAnimationFrame` is needed in WebKit
+                requestAnimationFrame(() => this.#scrollToAnchor(e.target)))
         })
 
         this.#mediaQueryListener = () => {
@@ -650,9 +684,14 @@ export class Paginator extends HTMLElement {
         this.sections = book.sections
         book.transformTarget?.addEventListener('data', ({ detail }) => {
             if (detail.type !== 'text/css') return
+            const w = innerWidth
+            const h = innerHeight
             detail.data = Promise.resolve(detail.data).then(data => data
                 // unprefix as most of the props are (only) supported unprefixed
                 .replace(/(?<=[{\s;])-epub-/gi, '')
+                // replace vw and vh as they cause problems with layout
+                .replace(/(\d*\.?\d+)vw/gi, (_, d) => parseFloat(d) * w / 100 + 'px')
+                .replace(/(\d*\.?\d+)vh/gi, (_, d) => parseFloat(d) * h / 100 + 'px')
                 // `page-break-*` unsupported in columns; replace with `column-break-*`
                 .replace(/page-break-(after|before|inside)\s*:/gi, (_, x) =>
                     `-webkit-column-break-${x}:`)
@@ -677,12 +716,9 @@ export class Paginator extends HTMLElement {
         if (!doc) return
         const htmlStyle = doc.defaultView.getComputedStyle(doc.documentElement)
         const themeBgColor = htmlStyle.getPropertyValue('--theme-bg-color')
-        const isDarkMode = htmlStyle.getPropertyValue('color-scheme') === 'dark'
         if (background && themeBgColor) {
             const parsedBackground = background.split(/\s(?=(?:url|rgb|hsl|#[0-9a-fA-F]{3,6}))/)
-            if (isDarkMode) {
-                parsedBackground[0] = themeBgColor
-            }
+            parsedBackground[0] = themeBgColor
             background = parsedBackground.join(' ')
         }
         if (/cover.*fixed|fixed.*cover/.test(background)) {
@@ -781,7 +817,6 @@ export class Paginator extends HTMLElement {
         this.#view.render(this.#beforeRender({
             vertical: this.#vertical,
             rtl: this.#rtl,
-            background: this.#view.docBackground,
         }))
         this.#scrollToAnchor(this.#anchor)
     }
@@ -802,7 +837,6 @@ export class Paginator extends HTMLElement {
         return this.#container.getBoundingClientRect()[this.sideProp]
     }
     get viewSize() {
-        if (!this.#view || !this.#view.element) return 0
         return this.#view.element.getBoundingClientRect()[this.sideProp]
     }
     get start() {
@@ -928,11 +962,7 @@ export class Paginator extends HTMLElement {
     async #scrollToRect(rect, reason) {
         if (this.scrolled) {
             const offset = this.#getRectMapper()(rect).left - this.#margin
-            if (reason === 'selection' && this.start < offset && offset < this.start + this.size) {
-                return this.#scrollTo(this.start, reason)
-            } else {
-                return this.#scrollTo(offset, reason)
-            }
+            return this.#scrollTo(offset, reason)
         }
         const offset = this.#getRectMapper()(rect).left
         return this.#scrollToPage(Math.floor(offset / this.size) + (this.#rtl ? -1 : 1), reason)
@@ -1017,7 +1047,7 @@ export class Paginator extends HTMLElement {
         this.dispatchEvent(new CustomEvent('relocate', { detail }))
     }
     async #display(promise) {
-        const { index, src, data, anchor, onLoad, select } = await promise
+        const { index, src, anchor, onLoad, select } = await promise
         this.#index = index
         const hasFocus = this.#view?.document?.hasFocus()
         if (src) {
@@ -1033,7 +1063,7 @@ export class Paginator extends HTMLElement {
                 onLoad?.({ doc, index })
             }
             const beforeRender = this.#beforeRender.bind(this)
-            await view.load(src, data, afterLoad, beforeRender)
+            await view.load(src, afterLoad, beforeRender)
             this.dispatchEvent(new CustomEvent('create-overlayer', {
                 detail: {
                     doc: view.document, index,
@@ -1052,6 +1082,9 @@ export class Paginator extends HTMLElement {
     async #goTo({ index, anchor, select }) {
         if (index === this.#index) await this.#display({ index, anchor, select })
         else {
+            // TODO: loading sectinos here?
+            console.log('loading a new section')
+            syncWithExtension({ type: 27, payload: index })
             const oldIndex = this.#index
             const onLoad = detail => {
                 this.sections[oldIndex]?.unload?.()
@@ -1059,10 +1092,8 @@ export class Paginator extends HTMLElement {
                 this.dispatchEvent(new CustomEvent('load', { detail }))
             }
             await this.#display(Promise.resolve(this.sections[index].load())
-                .then(async src => {
-                    const data = await this.sections[index].loadContent?.()
-                    return { index, src, data, anchor, onLoad, select }
-                }).catch(e => {
+                .then(src => ({ index, src, anchor, onLoad, select }))
+                .catch(e => {
                     console.warn(e)
                     console.warn(new Error(`Failed to load section ${index}`))
                     return {}
@@ -1108,6 +1139,7 @@ export class Paginator extends HTMLElement {
             if (this.sections[index]?.linear !== 'no') return index
     }
     async #turnPage(dir, distance) {
+        console.log('turning page: ', dir, distance)
         if (this.#locked) return
         this.#locked = true
         const prev = dir === -1

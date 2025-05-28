@@ -1,7 +1,4 @@
-const getTypes = el => new Set([
-    ...(el?.getAttributeNS?.('http://www.idpf.org/2007/ops', 'type')?.split(' ') ?? []),
-    ...(el?.attributes?.getNamedItem?.('epub:type')?.value?.split(' ') ?? []),
-])
+const getTypes = el => new Set(el?.getAttributeNS?.('http://www.idpf.org/2007/ops', 'type')?.split(' '))
 const getRoles = el => new Set(el?.getAttribute?.('role')?.split(' '))
 
 const isSuper = el => {

@@ -33,7 +33,7 @@ const getViewport = (doc, viewport) => {
 
 export class FixedLayout extends HTMLElement {
     static observedAttributes = ['zoom']
-    #root = this.attachShadow({ mode: 'closed' })
+    #root = this.attachShadow({ mode: 'open' })
     #observer = new ResizeObserver(() => this.#render())
     #spreads
     #index = -1
@@ -76,6 +76,7 @@ export class FixedLayout extends HTMLElement {
         const onZoom = srcOptionIsString ? null : srcOption?.onZoom
         const element = document.createElement('div')
         const iframe = document.createElement('iframe')
+        iframe.setAttribute('sandbox', 'allow-popups')
         element.append(iframe)
         Object.assign(iframe.style, {
             border: '0',
@@ -84,7 +85,7 @@ export class FixedLayout extends HTMLElement {
         })
         // `allow-scripts` is needed for events because of WebKit bug
         // https://bugs.webkit.org/show_bug.cgi?id=218086
-        iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts')
+        iframe.setAttribute('sandbox', 'allow-same-origin allow-scripts allow-popups')
         iframe.setAttribute('scrolling', 'no')
         iframe.setAttribute('part', 'filter')
         this.#root.append(element)
