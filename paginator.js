@@ -71,6 +71,9 @@ export const syncWithExtension = ({
     })
 }
 
+// TODO: Import message enum directly instead of using hardcoded numbers (27, 28) for message types
+// Consider creating a shared enum like: { ReaderChangeChapter: 27, ReaderPageLoaded: 28 }
+
 // collapsed range doesn't return client rects sometimes (or always?)
 // try make get a non-collapsed range or element
 const uncollapse = range => {
@@ -484,6 +487,7 @@ export class Paginator extends HTMLElement {
     #touchState
     #touchScrolled
     #lastVisibleRange
+    #bookInitiallyLoaded = false // flag to track if book has been initially loaded
     constructor() {
         super()
         this.#root.innerHTML = `<style>
@@ -682,6 +686,7 @@ export class Paginator extends HTMLElement {
     open(book) {
         this.bookDir = book.dir
         this.sections = book.sections
+        this.#bookInitiallyLoaded = false // reset flag when opening a new book
         book.transformTarget?.addEventListener('data', ({ detail }) => {
             if (detail.type !== 'text/css') return
             const w = innerWidth
@@ -706,7 +711,16 @@ export class Paginator extends HTMLElement {
         }
         this.#view = new View({
             container: this,
-            onExpand: () => this.#scrollToAnchor(this.#anchor),
+            onExpand: () => {
+                this.#scrollToAnchor(this.#anchor)
+                // Send event indicating reader page is fully rendered and ready for interaction
+                // Only send this event once per book, after full rendering is complete
+                if (!this.#bookInitiallyLoaded) {
+                    this.#bookInitiallyLoaded = true
+                    // Type 28: ReaderPageLoaded - sent once when reader page is fully loaded and ready for interaction
+                    syncWithExtension({ type: 28, payload: this.#index })
+                }
+            },
         })
         this.#container.append(this.#view.element)
         return this.#view
@@ -1084,6 +1098,7 @@ export class Paginator extends HTMLElement {
         else {
             // TODO: loading sectinos here?
             console.log('loading a new section')
+            // Type 27: ReaderChangeChapter - sent when loading a new section/chapter
             syncWithExtension({ type: 27, payload: index })
             const oldIndex = this.#index
             const onLoad = detail => {
