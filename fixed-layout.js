@@ -1,4 +1,5 @@
 import 'construct-style-sheets-polyfill'
+import { syncWithExtension } from './paginator.js'
 
 const parseViewport = str => str
     ?.split(/[,;\s]/) // NOTE: technically, only the comma is valid
@@ -37,6 +38,7 @@ export class FixedLayout extends HTMLElement {
     #observer = new ResizeObserver(() => this.#render())
     #spreads
     #index = -1
+    #bookInitiallyLoaded = false
     defaultViewport
     spread
     #portrait = false
@@ -181,6 +183,14 @@ export class FixedLayout extends HTMLElement {
             this.#side = this.#left.blank ? 'right'
                 : this.#right.blank ? 'left' : side
             this.#render()
+        }
+
+        // Send ReaderPageLoaded event once when the reader page is fully loaded and ready for interaction
+        // Only send this event once per book, after full rendering is complete
+        if (!this.#bookInitiallyLoaded) {
+            this.#bookInitiallyLoaded = true
+            // Type 28: ReaderPageLoaded - sent once when reader page is fully loaded and ready for interaction
+            syncWithExtension({ type: 28, payload: this.#index })
         }
     }
     #goLeft() {
