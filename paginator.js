@@ -28,14 +28,6 @@ const animate = (a, b, duration, ease, render) => new Promise(resolve => {
     requestAnimationFrame(step)
 })
 
-// TODO: figure out how to pass the variable down into the foliate-js package
-const MASTERLINGO_ENV = 'DEV'
-
-const MASTERLINGO_EXTENSION_ID = {
-    DEV: 'amlbpnchejmokgflmddoefbojdommgci',
-    PROD: 'fbfmjjebfpcefapmipcbckbdpfnjhfmj',
-}
-
 
 export const syncWithExtension = ({
     type,
@@ -51,7 +43,7 @@ export const syncWithExtension = ({
         ) {
             console.log('chrome.runtime.sendMessage')
             chrome.runtime.sendMessage(
-                MASTERLINGO_EXTENSION_ID[MASTERLINGO_ENV],
+                process.env['NEXT_PUBLIC_MASTERLINGO_EXTENSION_ID'],
                 {
                     type,
                     payload,
