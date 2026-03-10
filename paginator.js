@@ -125,9 +125,10 @@ const getBoundingClientRect = target => {
     return new DOMRect(left, top, right - left, bottom - top)
 }
 
-const getVisibleRange = (doc, start, end, mapRect) => {
-    // first get all visible nodes
-    const acceptNode = node => {
+// === MASTERLINGO START ===
+// Extracted acceptNode factory for reuse with different start/end ranges
+const createAcceptNode = (doc, start, end, mapRect) => {
+    return node => {
         const name = node.localName?.toLowerCase()
         // ignore all scripts, styles, and their children
         if (name === 'script' || name === 'style') return FILTER_REJECT
@@ -153,14 +154,49 @@ const getVisibleRange = (doc, start, end, mapRect) => {
         }
         return FILTER_SKIP
     }
-    const walker = doc.createTreeWalker(doc.body, filter, { acceptNode })
-    const nodes = []
-    for (let node = walker.nextNode(); node; node = walker.nextNode())
-        nodes.push(node)
+}
+// === MASTERLINGO END ===
+
+const getVisibleRange = (doc, start, end, mapRect, bufferStart = null, bufferEnd = null) => {
+    // === MASTERLINGO START ===
+    // Use buffer values for node collection if provided, otherwise use regular start/end
+    const nodeCollectionStart = bufferStart !== null ? bufferStart : start
+    const nodeCollectionEnd = bufferEnd !== null ? bufferEnd : end
+
+    // Collect nodes using buffered range (for pre-marking adjacent pages)
+    const acceptNodeBuffered = createAcceptNode(doc, nodeCollectionStart, nodeCollectionEnd, mapRect)
+    const walkerBuffered = doc.createTreeWalker(doc.body, filter, { acceptNode: acceptNodeBuffered })
+    const bufferedNodes = []
+    for (let node = walkerBuffered.nextNode(); node; node = walkerBuffered.nextNode())
+        bufferedNodes.push(node)
+
+    // Dispatch event with buffered nodes for external consumption (Masterlingo highlighting)
+    if (typeof window !== 'undefined' && window.dispatchEvent) {
+        const visibleNodesEvent = new CustomEvent('visible-nodes-update', {
+            detail: {
+                nodes: [...bufferedNodes],
+                timestamp: Date.now(),
+                isBuffered: bufferStart !== null || bufferEnd !== null,
+                bufferStart: nodeCollectionStart,
+                bufferEnd: nodeCollectionEnd,
+                visibleStart: start,
+                visibleEnd: end,
+            },
+        })
+        window.dispatchEvent(visibleNodesEvent)
+    }
+
+    // For the returned range, use regular start/end values
+    const acceptNodeRegular = createAcceptNode(doc, start, end, mapRect)
+    const walkerRegular = doc.createTreeWalker(doc.body, filter, { acceptNode: acceptNodeRegular })
+    const regularNodes = []
+    for (let node = walkerRegular.nextNode(); node; node = walkerRegular.nextNode())
+        regularNodes.push(node)
+    // === MASTERLINGO END ===
 
     // we're only interested in the first and last visible nodes
-    const from = nodes[0] ?? doc.body
-    const to = nodes[nodes.length - 1] ?? from
+    const from = regularNodes[0] ?? doc.body
+    const to = regularNodes[regularNodes.length - 1] ?? from
 
     // find the offset at which visibility changes
     const startOffset = from.nodeType === 1 ? 0
@@ -1326,8 +1362,15 @@ export class Paginator extends HTMLElement {
         if (this.scrolled) return getVisibleRange(this.#view.document,
             this.start, this.end, this.#getRectMapper())
         const size = this.#rtl ? -this.size : this.size
+        // === MASTERLINGO START ===
+        // Pass buffer range (previous + next page) for pre-marking adjacent pages
+        const pageWidth = Math.abs(size)
+        const bufferStart = this.start - size - pageWidth
+        const bufferEnd = this.end - size + pageWidth
         return getVisibleRange(this.#view.document,
-            this.start - size, this.end - size, this.#getRectMapper())
+            this.start - size, this.end - size, this.#getRectMapper(),
+            bufferStart, bufferEnd)
+        // === MASTERLINGO END ===
     }
     #afterScroll(reason) {
         const range = this.#getVisibleRange()
